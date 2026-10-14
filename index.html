@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="RedMem — a session-only Reddit research workspace. Collect, tag, search, and export Reddit posts. No accounts, no cloud, no persistence." />
+  <title>RedMem — Session-Only Reddit Research</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="app-header" role="banner">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">RM</span>
+        <div>
+          <h1 class="brand-title">RedMem</h1>
+          <p class="brand-tagline">Session-only Reddit research workspace</p>
+        </div>
+      </div>
+      <nav class="header-nav" aria-label="Primary">
+        <a href="#collection" class="nav-link">Collection</a>
+        <a href="#tools" class="nav-link">Import / Export</a>
+        <a href="#bookmarklet" class="nav-link">Bookmarklet</a>
+        <a href="#help" class="nav-link">Help</a>
+      </nav>
+    </div>
+    <div class="warning-banner" role="alert">
+      <strong>Heads up:</strong> RedMem keeps everything in memory only. Refreshing, closing, or navigating away <em>permanently discards</em> your collection. Export before you leave.
+    </div>
+  </header>
+
+  <main id="main" class="app-main">
+    <!-- ===================== Dashboard ===================== -->
+    <section class="panel" aria-labelledby="dashboard-heading">
+      <div class="panel-head">
+        <h2 id="dashboard-heading">Dashboard</h2>
+        <p class="panel-sub">Live statistics for the current temporary collection.</p>
+      </div>
+      <div class="stats-grid" role="list">
+        <div class="stat-card" role="listitem">
+          <span class="stat-value" id="stat-total">0</span>
+          <span class="stat-label">Total records</span>
+        </div>
+        <div class="stat-card" role="listitem">
+          <span class="stat-value" id="stat-retrieved">0</span>
+          <span class="stat-label">Retrieved</span>
+        </div>
+        <div class="stat-card" role="listitem">
+          <span class="stat-value" id="stat-linkonly">0</span>
+          <span class="stat-label">Link-only</span>
+        </div>
+        <div class="stat-card" role="listitem">
+          <span class="stat-value" id="stat-tags">0</span>
+          <span class="stat-label">Unique tags</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Add Post ===================== -->
+    <section class="panel" aria-labelledby="add-heading">
+      <div class="panel-head">
+        <h2 id="add-heading">Add a Reddit post</h2>
+        <p class="panel-sub">
+          Paste a Reddit post URL. RedMem will attempt a public retrieval; if that is blocked by the browser or Reddit, the record is saved as a link-only entry.
+        </p>
+      </div>
+      <form id="add-form" class="add-form" novalidate>
+        <div class="field">
+          <label for="url-input">Reddit post URL</label>
+          <input
+            id="url-input"
+            name="url"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://www.reddit.com/r/example/comments/abc123/title/"
+            aria-describedby="url-help url-error"
+            required
+          />
+          <p id="url-help" class="field-help">
+            Only <code>reddit.com</code>, <code>www.reddit.com</code>, <code>old.reddit.com</code>, <code>np.reddit.com</code>, <code>m.reddit.com</code>, and <code>redd.it</code> URLs are accepted.
+          </p>
+          <p id="url-error" class="field-error" role="alert" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="tags-input">Tags (optional, comma separated)</label>
+          <input
+            id="tags-input"
+            name="tags"
+            type="text"
+            autocomplete="off"
+            placeholder="ai, research, to-read"
+            aria-describedby="tags-help"
+          />
+          <p id="tags-help" class="field-help">Tags are created automatically when used.</p>
+        </div>
+
+        <div class="field">
+          <label for="notes-input">Notes (optional)</label>
+          <textarea
+            id="notes-input"
+            name="notes"
+            rows="3"
+            placeholder="Why are you saving this?"
+            aria-describedby="notes-help"
+          ></textarea>
+          <p id="notes-help" class="field-help">Notes are stored only in this session.</p>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="add-btn">Add &amp; retrieve</button>
+          <button type="button" class="btn" id="add-linkonly-btn">Add as link-only</button>
+        </div>
+
+        <div id="add-status" class="status" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <!-- ===================== Collection ===================== -->
+    <section class="panel" id="collection" aria-labelledby="collection-heading">
+      <div class="panel-head">
+        <h2 id="collection-heading">Collection</h2>
+        <p class="panel-sub">Search, filter, tag, and sort your saved posts.</p>
+      </div>
+
+      <div class="toolbar" role="search">
+        <div class="field toolbar-field">
+          <label for="search-input">Keyword search</label>
+          <input
+            id="search-input"
+            type="search"
+            autocomplete="off"
+            placeholder="Search titles, text, authors, notes, tags…"
+            aria-describedby="search-help"
+          />
+          <p id="search-help" class="field-help">Searches available titles, text, author, notes, and tags.</p>
+        </div>
+
+        <div class="field toolbar-field">
+          <label for="filter-tag">Filter by tag</label>
+          <select id="filter-tag">
+            <option value="">All tags</option>
+          </select>
+        </div>
+
+        <div class="field toolbar-field">
+          <label for="filter-status">Filter by status</label>
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="retrieved">Retrieved</option>
+            <option value="link-only">Link-only</option>
+            <option value="failed">Failed retrieval</option>
+          </select>
+        </div>
+
+        <div class="field toolbar-field">
+          <label for="sort-by">Sort by</label>
+          <select id="sort-by">
+            <option value="added-desc">Newest first</option>
+            <option value="added-asc">Oldest first</option>
+            <option value="title-asc">Title A→Z</option>
+            <option value="title-desc">Title Z→A</option>
+            <option value="author-asc">Author A→Z</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="collection-actions">
+        <span id="results-count" class="results-count" aria-live="polite">0 records</span>
+        <button type="button" class="btn btn-danger" id="clear-all-btn">Clear all</button>
+      </div>
+
+      <ul id="record-list" class="record-list" aria-label="Saved Reddit posts"></ul>
+
+      <div id="empty-state" class="empty-state">
+        <p class="empty-title">No records yet</p>
+        <p class="empty-body">
+          Add a Reddit post URL above, import a JSON export, or use the bookmarklet while viewing a Reddit post.
+        </p>
+      </div>
+    </section>
+
+    <!-- ===================== Import / Export ===================== -->
+    <section class="panel" id="tools" aria-labelledby="tools-heading">
+      <div class="panel-head">
+        <h2 id="tools-heading">Import / Export</h2>
+        <p class="panel-sub">Move your research between devices with portable files.</p>
+      </div>
+
+      <div class="tools-grid">
+        <div class="tool-card">
+          <h3>Export</h3>
+          <p>Download the current collection as a portable file.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="export-json-btn">Export JSON</button>
+            <button type="button" class="btn" id="export-md-btn">Export Markdown</button>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <h3>Import</h3>
+          <p>Import a RedMem JSON export. Markdown and text files are also accepted in a limited form.</p>
+          <div class="field">
+            <label for="import-file">Choose a file</label>
+            <input type="file" id="import-file" accept=".json,.md,.txt,application/json,text/markdown,text/plain" />
+            <p class="field-help">Maximum file size: 5&nbsp;MB. Scripts and HTML are never executed.</p>
+          </div>
+          <p id="import-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Bookmarklet ===================== -->
+    <section class="panel" id="bookmarklet" aria-labelledby="bm-heading">
+      <div class="panel-head">
+        <h2 id="bm-heading">Bookmarklet</h2>
+        <p class="panel-sub">A one-click helper to send the current Reddit post to RedMem.</p>
+      </div>
+
+      <ol class="bm-steps">
+        <li>Show your bookmarks bar (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> or <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>
+        <li>Drag the button below onto the bookmarks bar.</li>
+        <li>Open a Reddit post and click the bookmarklet. It copies the post URL to your clipboard and opens RedMem.</li>
+        <li>Paste the URL into the “Add a Reddit post” field (or let RedMem auto-fill if it is already open).</li>
+      </ol>
+
+      <p class="bm-drag">
+        <a id="bookmarklet-link" class="bookmarklet" href="#" aria-label="RedMem bookmarklet: drag me to your bookmarks bar">Send to RedMem</a>
+      </p>
+
+      <details class="bm-fallback">
+        <summary>Manual fallback &amp; browser limitations</summary>
+        <p>
+          Some browsers block bookmarklets on certain pages, and some mobile browsers do not support a bookmarks bar. If the bookmarklet does not work, simply copy the Reddit post URL and paste it into RedMem manually. That is the reliable fallback on every platform.
+        </p>
+        <p>Copy this code to create the bookmarklet yourself if needed:</p>
+        <pre id="bookmarklet-code" class="code-block"></pre>
+      </details>
+    </section>
+
+    <!-- ===================== Help ===================== -->
+    <section class="panel" id="help" aria-labelledby="help-heading">
+      <div class="panel-head">
+        <h2 id="help-heading">Help &amp; collection methods</h2>
+      </div>
+
+      <div class="help-grid">
+        <article>
+          <h3>A. URL entry &amp; retrieval</h3>
+          <p>
+            Paste a Reddit post URL. RedMem attempts a public, browser-compatible retrieval. If Reddit or the browser blocks it (CORS, access controls), the record is saved as link-only and clearly marked. RedMem never claims a successful retrieval unless the data was actually received and parsed.
+          </p>
+        </article>
+
+        <article>
+          <h3>C. Bookmarklet</h3>
+          <p>
+            Use the bookmarklet while viewing a Reddit post to copy the URL and open RedMem. This works without a backend and respects browser security. On mobile, copy and paste manually.
+          </p>
+        </article>
+
+        <article>
+          <h3>D. File import</h3>
+          <p>
+            Import a RedMem JSON export for full fidelity. Markdown and plain-text files are accepted in a limited form (URLs are extracted and added as link-only records). Imported HTML is treated as text and never executed.
+          </p>
+        </article>
+
+        <article>
+          <h3>Data safety</h3>
+          <p>
+            All Reddit content and imported files are treated as untrusted. Text is rendered with safe DOM APIs, URLs are validated to HTTP/HTTPS Reddit domains, and no scripts are ever evaluated.
+          </p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>RedMem — session-only research. Nothing is stored on a server or between sessions.</p>
+    <p><a href="#main">Back to top</a></p>
+  </footer>
+
+  <!-- Confirm dialog (native <dialog> for accessibility) -->
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-message">Are you sure?</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn">Cancel</button>
+        <button value="confirm" class="btn btn-danger" id="confirm-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast region -->
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="bookmarklet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
