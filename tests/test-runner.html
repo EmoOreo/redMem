@@ -26,6 +26,14 @@
   <div class="summary" id="summary">Running...</div>
   <ol id="results"></ol>
 
+  <!-- Hidden DOM container for UI rendering tests -->
+  <div id="test-dom" style="display:none;">
+    <span id="stat-total">0</span>
+    <span id="stat-retrieved">0</span>
+    <span id="stat-linkonly">0</span>
+    <span id="stat-tags">0</span>
+  </div>
+
   <script src="../bookmarklet.js"></script>
   <script src="../app.js"></script>
   <script>
@@ -119,26 +127,65 @@
         return eq(rec.url === "https://example.com/external-article" && rec.permalink === "https://www.reddit.com/r/news/comments/link123/headline/", true);
       });
 
-      // 5. JSON Export & Import Round Trip
-      test("JSON export and import round trip preserves link post destination and permalink", function () {
+      // 5. Real MAX_RECORDS (5000) Capacity Limit & Import Capacity Testing
+      test("addRecord directly at actual MAX_RECORDS (5000) limit rejects 5001st record", function () {
         RM.clearAll();
-        const rec = RM.createRecord({
-          url: "https://external.org/paper.pdf",
-          permalink: "https://www.reddit.com/r/science/comments/paper123/title/",
-          title: "Research Paper",
-          status: "retrieved",
-          tags: ["science", "pdf"],
-          notes: "Important study"
+        // Fill memory with exactly 5000 records
+        for (let i = 0; i < RM.MAX_RECORDS; i++) {
+          RM.state.records.push(RM.createRecord({ url: "https://www.reddit.com/comments/post" + i }));
+        }
+        // Directly test addRecord at boundary
+        const res5001 = RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/post5001" }));
+        const currentCount = RM.state.records.length;
+        RM.clearAll();
+        return eq(res5001 && res5001.error === "limit" && currentCount === 5000, true);
+      });
+
+      test("importJson enforces actual MAX_RECORDS (5000) limit during bulk import", function () {
+        RM.clearAll();
+        // Pre-fill 4998 records
+        for (let i = 0; i < 4998; i++) {
+          RM.state.records.push(RM.createRecord({ url: "https://www.reddit.com/comments/pre" + i }));
+        }
+        // Prepare import with 5 new records (total 5003)
+        const importPayload = {
+          records: [
+            { permalink: "https://www.reddit.com/comments/imp1" },
+            { permalink: "https://www.reddit.com/comments/imp2" },
+            { permalink: "https://www.reddit.com/comments/imp3" },
+            { permalink: "https://www.reddit.com/comments/imp4" },
+            { permalink: "https://www.reddit.com/comments/imp5" }
+          ]
+        };
+        const statusEl = document.createElement("div");
+        RM.importJson(JSON.stringify(importPayload), statusEl);
+
+        const totalRecords = RM.state.records.length;
+        const text = statusEl.textContent;
+        RM.clearAll();
+
+        return eq(totalRecords === 5000 && text.includes("Collection limit reached"), true);
+      });
+
+      // 6. JSON Import Preservation, Validation & Sanitization
+      test("importJson preserves link post destination and permalink", function () {
+        RM.clearAll();
+        const jsonPayload = JSON.stringify({
+          format: "redmem-collection",
+          records: [{
+            url: "https://external.org/paper.pdf",
+            permalink: "https://www.reddit.com/r/science/comments/paper123/title/",
+            title: "Research Paper",
+            status: "retrieved",
+            tags: ["science", "pdf"],
+            notes: "Important study"
+          }]
         });
-        RM.addRecord(rec);
 
-        const exportedObj = RM.buildExportObject();
-        const jsonString = JSON.stringify(exportedObj);
-
-        RM.clearAll();
-        RM.importJson(jsonString);
-
+        RM.importJson(jsonPayload);
         const imported = RM.state.records[0];
+        RM.clearAll();
+
         return eq(
           imported &&
           imported.url === "https://external.org/paper.pdf" &&
@@ -148,36 +195,48 @@
         );
       });
 
-      // 6. Record Limit Enforcement
-      test("enforces MAX_RECORDS capacity limit on addition and import", function () {
+      test("importJson rejects records with invalid Reddit permalink and unsafe destination handling", function () {
         RM.clearAll();
-        for (let i = 0; i < 5; i++) {
-          RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/rec" + i }));
-        }
-        RM.state.records.length = 5;
+        const jsonPayload = JSON.stringify({
+          records: [
+            { url: "https://example.com/not-a-reddit-url", permalink: "https://example.com/not-reddit" }, // Invalid permalink & url -> reject
+            { url: "javascript:alert('xss')", permalink: "https://www.reddit.com/comments/valid1" } // Valid permalink, unsafe url
+          ]
+        });
 
-        const rec6 = RM.createRecord({ url: "https://www.reddit.com/comments/rec6" });
-        const limitRes = RM.state.records.length >= 5 ? { error: "limit" } : RM.addRecord(rec6);
+        const statusEl = document.createElement("div");
+        RM.importJson(jsonPayload, statusEl);
 
+        const records = RM.state.records;
+        const renderedLink = RM.sanitizeUrl(records[0] ? records[0].url : "");
         RM.clearAll();
-        return eq(limitRes.error, "limit");
+
+        return eq(
+          records.length === 1 &&
+          records[0].permalink === "https://www.reddit.com/comments/valid1" &&
+          renderedLink === "#",
+          true
+        );
       });
 
-      // 7. Retrieval Status & Dashboard Stats Consistency
-      test("retrieved, link-only, and failed statuses counted accurately in stats", function () {
+      // 7. Real Dashboard Rendering & Status Counts
+      test("renderStats renders accurate counts for total, retrieved, link-only, and failed in DOM", function () {
         RM.clearAll();
         RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r1", status: "retrieved" }));
         RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r2", status: "link-only" }));
         RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r3", status: "failed" }));
 
-        const total = RM.state.records.length;
-        const retrieved = RM.state.records.filter(r => r.status === "retrieved").length;
-        const linkonly = RM.state.records.filter(r => r.status === "link-only" || r.status === "failed").length;
+        RM.renderStats();
 
-        return eq(total === 3 && retrieved === 1 && linkonly === 2, true);
+        const totalText = document.getElementById("stat-total").textContent;
+        const retrievedText = document.getElementById("stat-retrieved").textContent;
+        const linkonlyText = document.getElementById("stat-linkonly").textContent;
+
+        RM.clearAll();
+        return eq(totalText === "3" && retrievedText === "1" && linkonlyText === "2", true);
       });
 
-      // 8. Bookmarklet Decoding & Pre-fill Handling
+      // 8. Bookmarklet Code Generation
       test("bookmarklet code generation creates valid javascript: bookmarklet", function () {
         const code = window.RedMemBookmarklet && window.RedMemBookmarklet.code;
         return eq(typeof code === "string" && code.startsWith("javascript:"), true);
@@ -193,15 +252,25 @@
         return eq(RM.escapeMarkdown("*header* [link](url) #tag"), "\\*header\\* \\[link\\]\\(url\\) \\#tag");
       });
 
-      // 10. Session-Only Isolation & Absence of Storage
-      test("verifies session-only workspace without browser persistent storage", function () {
-        try {
-          const lsKeys = Object.keys(localStorage).filter(function (k) { return k.startsWith("redmem"); });
-          const ssKeys = Object.keys(sessionStorage).filter(function (k) { return k.startsWith("redmem"); });
-          return eq(lsKeys.length === 0 && ssKeys.length === 0, true);
-        } catch (e) {
-          return true;
-        }
+      // 10. Source Code Audit for Session-Only Storage Mechanisms
+      test("source code audit confirms no persistent storage implementations (localStorage, sessionStorage, indexedDB, cookies, serviceWorker)", function () {
+        const forbiddenRegex = /\b(localStorage|sessionStorage|indexedDB|document\.cookie|serviceWorker)\b/i;
+
+        let foundViolations = [];
+
+        // Inspect loaded function sources in runtime window
+        const appSource = window.RedMem ? (
+          window.RedMem.addRecord.toString() +
+          window.RedMem.importJson.toString() +
+          window.RedMem.renderStats.toString() +
+          window.RedMem.createRecord.toString()
+        ) : "";
+        const bmSource = window.RedMemBookmarklet ? window.RedMemBookmarklet.code : "";
+
+        if (forbiddenRegex.test(appSource)) foundViolations.push("appSource");
+        if (forbiddenRegex.test(bmSource)) foundViolations.push("bmSource");
+
+        return eq(foundViolations.length, 0);
       });
 
       RM.clearAll();

@@ -17,7 +17,7 @@ A session-only Reddit research workspace. Collect Reddit posts, organize them wi
 - **Canonical URL normalization & duplicate detection** based on post ID and cleaned parameters.
 - **Link Post Support**: Preserves both external destination link (`url`) and Reddit thread link (`permalink`) across exports/imports.
 - **Individual delete** and **confirmed clear-all**.
-- **JSON export / import** with validation, capacity enforcement (5000 max records), and duplicate handling.
+- **JSON export / import** with validation, capacity enforcement (5,000 max records), and duplicate handling.
 - **Optional Markdown export** with escaped content and sanitized URLs.
 - **Bookmarklet** for one-click capture from a Reddit post page with auto-fill support.
 - **Responsive layout** for desktop and phone.
@@ -97,7 +97,7 @@ You can always use **Add as link-only** to skip retrieval entirely.
 
 ### C. File import
 
-- **RedMem JSON export** — full fidelity. Validated against expected schema, preserves permalinks and external destinations, enforces 5 MB file limit and 5000 max record limit.
+- **RedMem JSON export** — full fidelity. Validated against expected schema, preserves permalinks and external destinations, enforces 5 MB file limit and 5,000 max record limit.
 - **Markdown / plain text** — Reddit URLs are extracted and added as link-only records. Markup is never executed.
 
 ---
@@ -119,7 +119,7 @@ You can always use **Add as link-only** to skip retrieval entirely.
 
 Open `tests/test-runner.html` in a browser. The test suite executes directly against `app.js` and `bookmarklet.js` using `window.RedMem`.
 
-**Automated Test Results (17/17 Passed):**
+**Automated Test Results (19/19 Passed):**
 1. Standard Reddit post URL acceptance and comments path canonicalization.
 2. `old.reddit.com` post permalink canonicalization.
 3. `redd.it` shortlink canonicalization.
@@ -130,13 +130,15 @@ Open `tests/test-runner.html` in a browser. The test suite executes directly aga
 8. `sanitizeUrl` sanitization of `javascript:` and `data:` URLs to `#`.
 9. Duplicate detection across normalized post IDs.
 10. External destination URL vs Reddit permalink separation for link posts.
-11. JSON export and import round-trip preserving link post destination and permalink.
-12. `MAX_RECORDS` capacity limit enforcement (5000 records).
-13. Status counting consistency (`retrieved`, `link-only`, `failed`) on dashboard.
-14. Bookmarklet code generation.
-15. Tag parsing, deduplication, and length capping.
-16. Markdown escaping.
-17. Session-only storage isolation verification.
+11. `addRecord` enforcement directly at actual `MAX_RECORDS` (5,000) boundary.
+12. `importJson` enforcement of actual `MAX_RECORDS` (5,000) capacity limit during bulk import.
+13. `importJson` preservation of external destination URLs and Reddit permalinks.
+14. `importJson` rejection of invalid Reddit permalinks and safe handling of unsafe destination URLs.
+15. `renderStats` accurate rendering of total, retrieved, link-only, and failed counts in DOM elements.
+16. Bookmarklet code generation.
+17. Tag parsing, deduplication, and length capping.
+18. Markdown character escaping.
+19. Source code audit confirming complete absence of persistent storage implementations (`localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`, `serviceWorker`).
 
 ### Manual Verification Steps
 

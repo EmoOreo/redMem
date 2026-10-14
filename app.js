@@ -986,13 +986,21 @@
         continue;
       }
 
-      // Check permalink first, then url for Reddit validity
-      const permalink = safeString(raw.permalink || raw.url, 2000);
-      const destinationUrl = safeString(raw.url || raw.permalink, 2000);
+      let permalink = safeString(raw.permalink, 2000);
+      let destinationUrl = safeString(raw.url, 2000);
 
+      // Validate permalink: must be a valid Reddit URL.
+      // If raw.permalink is invalid or missing, check raw.url as permalink fallback.
       if (!permalink || !isRedditUrl(permalink)) {
-        invalid++;
-        continue;
+        if (destinationUrl && isRedditUrl(destinationUrl)) {
+          permalink = destinationUrl;
+        } else {
+          invalid++;
+          continue;
+        }
+      }
+      if (!destinationUrl) {
+        destinationUrl = permalink;
       }
 
       const normalized = normalizeRedditUrl(permalink);
