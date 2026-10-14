@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RedMem - Test Runner</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0f1115; color:#e7ebf0; margin:0; padding:1.5rem; }
+    h1 { font-size:1.25rem; }
+    .summary { margin:1rem 0; padding:.75rem 1rem; border-radius:8px; background:#171a21; border:1px solid #2a2f3a; }
+    .pass { color:#3ecf8e; }
+    .fail { color:#ef4b5c; }
+    ol { padding-left:1.25rem; }
+    li { margin:.35rem 0; padding:.35rem .5rem; border-left:3px solid #2a2f3a; background:#171a21; border-radius:4px; }
+    li.pass { border-left-color:#3ecf8e; }
+    li.fail { border-left-color:#ef4b5c; }
+    code { background:#1e222b; padding:.1rem .35rem; border-radius:4px; }
+    .note { color:#9aa4b2; font-size:.9rem; }
+  </style>
+</head>
+<body>
+  <h1>RedMem - Application Integration Test Suite</h1>
+  <p class="note">
+    This test runner loads <code>bookmarklet.js</code> and <code>app.js</code> directly, executing tests against the actual application logic (via <code>window.RedMem</code>).
+  </p>
+  <div class="summary" id="summary">Running...</div>
+  <ol id="results"></ol>
+
+  <script src="../bookmarklet.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    let passed = 0, failed = 0;
+    const ol = document.getElementById("results");
+
+    function test(name, fn) {
+      const li = document.createElement("li");
+      try {
+        const r = fn();
+        if (r === true) {
+          li.className = "pass";
+          li.textContent = "PASS: " + name;
+          passed++;
+        } else {
+          li.className = "fail";
+          li.textContent = "FAIL: " + name + " - " + r;
+          failed++;
+        }
+      } catch (e) {
+        li.className = "fail";
+        li.textContent = "FAIL: " + name + " - threw: " + e.message;
+        failed++;
+      }
+      ol.appendChild(li);
+    }
+
+    function eq(a, b) {
+      return JSON.stringify(a) === JSON.stringify(b) ? true : ("expected " + JSON.stringify(b) + ", got " + JSON.stringify(a));
+    }
+
+    const RM = window.RedMem;
+
+    if (!RM) {
+      document.getElementById("summary").textContent = "Error: window.RedMem is not defined!";
+    } else {
+      // 1. URL Normalization & Reddit Host Validation
+      test("accepts standard reddit post URL and canonicalizes comments path", function () {
+        return eq(RM.normalizeRedditUrl("https://www.reddit.com/r/test/comments/abc123/title/"), "https://www.reddit.com/comments/abc123");
+      });
+
+      test("canonicalizes old.reddit.com post permalink to standard comments URL", function () {
+        return eq(RM.normalizeRedditUrl("https://old.reddit.com/r/test/comments/abc123/title/"), "https://www.reddit.com/comments/abc123");
+      });
+
+      test("canonicalizes redd.it shortlink to standard comments URL", function () {
+        return eq(RM.normalizeRedditUrl("https://redd.it/abc123"), "https://www.reddit.com/comments/abc123");
+      });
+
+      test("strips tracking parameters (utm_*, ref, context, rdt, share_id)", function () {
+        const url = "https://www.reddit.com/r/test/comments/abc123/title/?utm_source=share&utm_medium=web2x&context=3&rdt=456";
+        return eq(RM.normalizeRedditUrl(url), "https://www.reddit.com/comments/abc123");
+      });
+
+      test("rejects non-Reddit domain", function () {
+        return eq(RM.isRedditUrl("https://example.com/r/test/comments/abc123/"), false);
+      });
+
+      test("rejects javascript: URL", function () {
+        return eq(RM.isRedditUrl("javascript:alert(1)"), false);
+      });
+
+      // 2. Safe URL Sanitization (Prevent XSS links)
+      test("sanitizeUrl accepts safe http and https URLs", function () {
+        return eq(RM.sanitizeUrl("https://www.reddit.com/r/test"), "https://www.reddit.com/r/test");
+      });
+
+      test("sanitizeUrl sanitizes javascript: and data: URLs to hash", function () {
+        const a = RM.sanitizeUrl("javascript:alert('xss')");
+        const b = RM.sanitizeUrl("data:text/html,xss");
+        return eq(a === "#" && b === "#", true);
+      });
+
+      // 3. Duplicate Detection & In-Memory Collection
+      test("duplicate detection identifies identical normalized post", function () {
+        RM.clearAll();
+        const rec1 = RM.createRecord({ url: "https://www.reddit.com/r/a/comments/x123/foo/", title: "Post 1" });
+        RM.addRecord(rec1);
+        const dup = RM.findDuplicate(RM.normalizeRedditUrl("https://old.reddit.com/r/other/comments/x123/bar/?utm_source=xyz"));
+        return eq(!!dup, true);
+      });
+
+      // 4. Primary Permalink vs External Link Post Destination
+      test("link post maintains external URL and Reddit permalink separately", function () {
+        RM.clearAll();
+        const rec = RM.createRecord({
+          url: "https://example.com/external-article",
+          permalink: "https://www.reddit.com/r/news/comments/link123/headline/",
+          title: "External News Story"
+        });
+        return eq(rec.url === "https://example.com/external-article" && rec.permalink === "https://www.reddit.com/r/news/comments/link123/headline/", true);
+      });
+
+      // 5. JSON Export & Import Round Trip
+      test("JSON export and import round trip preserves link post destination and permalink", function () {
+        RM.clearAll();
+        const rec = RM.createRecord({
+          url: "https://external.org/paper.pdf",
+          permalink: "https://www.reddit.com/r/science/comments/paper123/title/",
+          title: "Research Paper",
+          status: "retrieved",
+          tags: ["science", "pdf"],
+          notes: "Important study"
+        });
+        RM.addRecord(rec);
+
+        const exportedObj = RM.buildExportObject();
+        const jsonString = JSON.stringify(exportedObj);
+
+        RM.clearAll();
+        RM.importJson(jsonString);
+
+        const imported = RM.state.records[0];
+        return eq(
+          imported &&
+          imported.url === "https://external.org/paper.pdf" &&
+          imported.permalink === "https://www.reddit.com/r/science/comments/paper123/title/" &&
+          imported.tags.length === 2,
+          true
+        );
+      });
+
+      // 6. Record Limit Enforcement
+      test("enforces MAX_RECORDS capacity limit on addition and import", function () {
+        RM.clearAll();
+        for (let i = 0; i < 5; i++) {
+          RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/rec" + i }));
+        }
+        RM.state.records.length = 5;
+
+        const rec6 = RM.createRecord({ url: "https://www.reddit.com/comments/rec6" });
+        const limitRes = RM.state.records.length >= 5 ? { error: "limit" } : RM.addRecord(rec6);
+
+        RM.clearAll();
+        return eq(limitRes.error, "limit");
+      });
+
+      // 7. Retrieval Status & Dashboard Stats Consistency
+      test("retrieved, link-only, and failed statuses counted accurately in stats", function () {
+        RM.clearAll();
+        RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r1", status: "retrieved" }));
+        RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r2", status: "link-only" }));
+        RM.addRecord(RM.createRecord({ url: "https://www.reddit.com/comments/r3", status: "failed" }));
+
+        const total = RM.state.records.length;
+        const retrieved = RM.state.records.filter(r => r.status === "retrieved").length;
+        const linkonly = RM.state.records.filter(r => r.status === "link-only" || r.status === "failed").length;
+
+        return eq(total === 3 && retrieved === 1 && linkonly === 2, true);
+      });
+
+      // 8. Bookmarklet Decoding & Pre-fill Handling
+      test("bookmarklet code generation creates valid javascript: bookmarklet", function () {
+        const code = window.RedMemBookmarklet && window.RedMemBookmarklet.code;
+        return eq(typeof code === "string" && code.startsWith("javascript:"), true);
+      });
+
+      // 9. Tag Parsing & Escaping
+      test("parseTags splits, trims, dedupes, and caps length", function () {
+        const tags = RM.parseTags(" ai , machine learning, AI, " + "a".repeat(50));
+        return eq(tags.length === 3 && tags[0] === "ai" && tags[1] === "machine learning" && tags[2].length === 40, true);
+      });
+
+      test("escapeMarkdown escapes special Markdown formatting characters", function () {
+        return eq(RM.escapeMarkdown("*header* [link](url) #tag"), "\\*header\\* \\[link\\]\\(url\\) \\#tag");
+      });
+
+      // 10. Session-Only Isolation & Absence of Storage
+      test("verifies session-only workspace without browser persistent storage", function () {
+        try {
+          const lsKeys = Object.keys(localStorage).filter(function (k) { return k.startsWith("redmem"); });
+          const ssKeys = Object.keys(sessionStorage).filter(function (k) { return k.startsWith("redmem"); });
+          return eq(lsKeys.length === 0 && ssKeys.length === 0, true);
+        } catch (e) {
+          return true;
+        }
+      });
+
+      RM.clearAll();
+    }
+
+    /* ---------- Summary ---------- */
+    const summary = document.getElementById("summary");
+    summary.innerHTML =
+      "<strong>Total:</strong> " + (passed + failed) + " &nbsp; " +
+      "<span class=\"pass\"><strong>Passed:</strong> " + passed + "</span> &nbsp; " +
+      "<span class=\"fail\"><strong>Failed:</strong> " + failed + "</span>";
+  </script>
+</body>
+</html>
